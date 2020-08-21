@@ -15,8 +15,11 @@
 #include "menudraw.h"
 #include "main.h"
 
-ff_object *first_object = NULL;
+static void analyzeobject(ff_object *obj);
 
+ff_object *first_object = NULL; // prvni objekt ve spojovem seznamu
+
+// vyrobi novy objekt a zaradi do spojoveho seznamu
 ff_object *new_object(const char *color, char type, int x, int y,
 		      int width, int height, const char *data)
 {
@@ -37,9 +40,12 @@ ff_object *new_object(const char *color, char type, int x, int y,
   result->next = first_object;
   first_object = result;
 
+  analyzeobject(result);
+
   return result;
 }
 
+// verze new_object pro lua
 int script_new_object(lua_State *L)
 {
   const char *color = luaL_checklstring(L, 1, NULL);
@@ -55,6 +61,7 @@ int script_new_object(lua_State *L)
   return 1;
 }
 
+// nastavi rozmery (lua funkci)
 int script_setroomsize(lua_State *L)
 {
   room_width  = luaL_checkinteger(L, 1);
@@ -62,6 +69,19 @@ int script_setroomsize(lua_State *L)
 
   return 0;
 }
+
+/*
+Objekt obsahuje polozku char *data, ktera urcuje, jeho tvar.
+Jedna se o pole jednicek a nul o delce width*height. Jednicka
+znamena policko objektu, nula znamena prazdno, toto pole je
+zapsano po radcich.
+
+Funkce analyzeobject si k objektu vyrobi seznam policek, co
+jsou od nej vpravo / vlevo / nahore / dole. Tato policka
+(jejich souradnice) ulozi do prislusnych poli dirsquares. Delky
+techto poli pak do dirnum. Takto vygenerovane informace se budou
+hodit pri strkani / padani objektu.
+*/
 
 static void analyzeobject(ff_object *obj)
 {
@@ -160,16 +180,15 @@ static void analyzeobject(ff_object *obj)
   }
 }
 
+/* spocita objekty, vytvori objlisty, tato funkce se spusti
+   po vyrobeni vsech objektu */
 void finish_objects()
 {
   int i, j;
   ff_object *obj;
 
   objnum = 0;
-  for(obj = first_object; obj; obj = obj->next){
-    analyzeobject(obj);
-    objnum++;
-  }
+  for(obj = first_object; obj; obj = obj->next) objnum++;
 
   for(i=0; i<NUMOBJLISTS; i++)
     objlist[i] = (ff_object **)mymalloc(objnum*sizeof(ff_object *));
@@ -180,17 +199,9 @@ void finish_objects()
       obj->index[j] = i;
     }
 
-  level_anim_init();
-  level_keys_init();
-  level_gmoves_init();
-  level_gsaves_init();
-  init_rules();
-  init_moves();
-  unanim_fish_rectangle();
-  calculatewin();
-  if(!userlev) menu_create_icon();
 }
 
+// prohodi objekt obj1 s objektem na pozici index2 v objlist[list]
 void swapobject(ff_object *obj1, int index2, int list)
 {
   objlist[list][obj1->index[list]] = objlist[list][index2];
@@ -200,12 +211,12 @@ void swapobject(ff_object *obj1, int index2, int list)
   objlist[list][index2] = obj1;
 }
 
-int backdir(int dir)
+int backdir(int dir) // vrati opacny smer
 {
   return (dir+2)%4;
 }
 
-coor coord(int x, int y)
+coor coord(int x, int y) // vrati zadane souradnice ve strukture coor
 {
   coor result;
   result.x = x;
@@ -213,7 +224,7 @@ coor coord(int x, int y)
   return result;
 }
 
-coor coorsum(coor c1, coor c2)
+coor coorsum(coor c1, coor c2)  // secte souradnice (po slozkach)
 {
   coor result;
   result.x = c1.x+c2.x;
@@ -221,13 +232,10 @@ coor coorsum(coor c1, coor c2)
   return result;
 }
 
-void delete_objects()
+void delete_objects() // uvolni z pameti vsechny objekty
 {
   ff_object *obj;
   int i;
-
-  free_rules();
-  free_moves();
 
   while(first_object){
     obj = first_object;

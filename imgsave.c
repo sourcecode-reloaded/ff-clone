@@ -14,9 +14,10 @@ cairo_surface_t *imgsave(char *filename, int width, int height, char draw_tick, 
   cairo_t *cr;
 
   cairo_surface_t *surf =
-    cairo_image_surface_create (CAIRO_FORMAT_RGB24, width, height);
+    cairo_image_surface_create (CAIRO_FORMAT_RGB24, width, height); // hlavni obrazek
   cairo_surface_t *surf2 =
     cairo_image_surface_create (CAIRO_FORMAT_ARGB32, width, height);
+       // vrstva s poctem tahu a fajfkou
 
   if(draw_tick || draw_moves) cr = cairo_create(surf2);
 
@@ -60,31 +61,34 @@ cairo_surface_t *imgsave(char *filename, int width, int height, char draw_tick, 
     cairo_restore(cr);
   }
 
+  if(draw_tick || draw_moves) cairo_destroy(cr);
+
   // zmensena mistnost
 
   cr = cairo_create(surf);
 
   cairo_save(cr);
 
-  cairo_set_source(cr, bg_pattern);
+  cairo_set_source(cr, bg_pattern); // pozadi
   cairo_paint(cr);
   cairo_scale(cr, ((float)width)/room_width,
 	      ((float)height)/room_height);
-  draw_layers_noanim(cr);
-  
+  draw_layers_noanim(cr); // zdi, predmety, ryby, ...
+
   cairo_restore(cr);
 
-  // merge surfaces
+  // pridam vrstvu s fajfkou a tahy
 
   if(draw_tick || draw_moves){
     cairo_set_source_surface(cr, surf2, 0, 0);
-    cairo_paint_with_alpha(cr, 0.7);
+    cairo_paint_with_alpha(cr, 0.7); // bude trochu pruhledna
     cairo_surface_destroy(surf2);
   }
 
-  // save to png
-
   cairo_destroy(cr);
+
+  // ulozeni do PNG
+
   cairo_surface_write_to_png(surf, filename);
 
   return surf;

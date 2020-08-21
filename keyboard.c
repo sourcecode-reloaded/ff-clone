@@ -1,6 +1,7 @@
 #include <string.h>
 #include <cairo/cairo.h>
 #include <X11/keysym.h>
+#include "warning.h"
 #include "X.h"
 #include "window.h"
 #include "script.h"
@@ -14,54 +15,133 @@
 #include "keyboard.h"
 #include "draw.h"
 #include "imgsave.h"
-#include "menuloop.h"
+#include "menuevents.h"
+#include "infowindow.h"
 
-#define SPACE   4
-#define TAB     5
-#define MINUS   6
-#define PLUS    7
-#define PG_UP   8
-#define PG_DN   9
-#define HOME   10
-#define END    11
+// typy klaves
+#define NO_KEY   -1 // zadna
 
-#define KEYNUM 12
+// 0 az 3 jsou smery definovane v object.h
 
-static unsigned long key_sym[KEYNUM];
-static unsigned int key_code[KEYNUM];
-static char key_state[KEYNUM];
-static char key_counter[4];
-//static char escape_pressed, space;
-static char last_axis = 0;
+#define MINUS     4 // minus
+#define PLUS      5 // plus, '=', ...
 
-static char arrowpressed(int dir)
+#define BLOCKANIM 7 // klavesa, co blokuje animaci
+#define SPACE     8 // prepnuti ryby
+
+// pocet typu klaves, u kterych me zajima, zda jsou drzeny
+#define KEYNUM    6
+
+/*****************************************************************************/
+//*************************   Drzeni klaves   *********************************/
+
+/*
+  Abych mel prehled, jake typy klaves jsou jak drzeny, udrzuji si
+  v poli key_holded[] u kazdeho typu klavesy, kolika klavesami je prave drzen.
+  Vedle toho v poli holded_code[] si udrzuji u kazdeho drzeneho key_code, ktery
+  zastupuje nejaky typ klavesy, o ktery se zajimam, ktery to vlastne je. Ve zbytku
+  holded_code je NO_KEY. Pri pusteni klavesy se tedy orientuji pouze podle key_code
+  a nerozhodi me tak ani napriklad prepnuti na ceskou klavesnici, vypnuti
+  numlocku, ...
+
+  Typ BLOCKANIM funguje trochu jinak, animaci blokuje vzdy jen posledni zmacknuta
+  klavesa s timto typem. V promenne keyboard_blockanim si tedy uchovavam cislo o jedna
+  vetsi nez index prislusne klavesy v holded_code.
+ */
+static int min_keycode, max_keycode; /* hranice key_code ziskane od X-serveru,
+					max_keycode kvuli pohodlnejsi manipulace
+					o jedna vetsi nez skutecne maximum */
+static int *holded_code; /* indexace: 0 (nejmensi key_code) az
+			    max_keycode-min_keycode-1 (nejvetsi key_code) */
+static int key_holded[KEYNUM];
+
+// zaregistrovani pusteni daneho key_code
+static void key_up(unsigned int keycode)
 {
-  return key_state[dir] == 1 && key_counter[dir] == 0;
+  int i;
+
+  if(keycode >= max_keycode || keycode < min_keycode){
+    warning("keycode %d out of bounds [%d, %d)", keycode, max_keycode, min_keycode);
+    return;
+  }
+
+  i = keycode - min_keycode;
+
+  if(i+1 == keyboard_blockanim) keyboard_blockanim = 0;
+
+  if(holded_code[i] == NO_KEY) return;
+
+  if(!(--key_holded[holded_code[i]])){ // pustene vsechny minusy / plusy -> rusim previjeni tahu
+    if(holded_code[i] == MINUS) rewind_stop(-1);
+    else if(holded_code[i] == PLUS) rewind_stop(1);
+  }
+  holded_code[i] = NO_KEY;
+
+  return;
 }
 
-int QUEUEWAIT;
+// zaregistrovani zmacknuti daneho key_code
+static void key_down(unsigned int keycode, int keyaction)
+{
+  int i;
+
+  if(keycode >= max_keycode || keycode < min_keycode){
+    warning("keycode %d out of bounds [%d, %d)", keycode, max_keycode, min_keycode);
+    return;
+  }
+
+  i = keycode - min_keycode;
+
+  if(holded_code[i] != NO_KEY){
+    warning("double pressed keycode %d", keycode);
+    key_up(keycode);
+  }
+
+  if(keyaction == BLOCKANIM) keyboard_blockanim = i+1;
+  else if(keyaction >= 0 && keyaction < KEYNUM){
+    holded_code[i] = keyaction;
+    if(!key_holded[keyaction]++){ // zahajuji previjeni tahu
+      if(keyaction == MINUS) rewind_moves(-1);
+      else if(keyaction == PLUS) rewind_moves(1);
+    }
+  }
+}
+
+/*
+  U sipek navic cekam nekolik framu nez nasadim auto repeat. U kazdeho smeru
+  pri zmacknuti nastavim do prislusne polozky v key_counter hodnotu HOLDWAIT.
+  Tuto hodnotu v kazdem frame snizim a teprve, az dojde do nuly, prohlasim sipku
+  za opravdu drzenou.
+*/
 int HOLDWAIT;
+static int key_counter[4];
 
-void kb_apply_safemode()
+static char arrowpressed(int dir) // vrati, jestli je dana sipka drzena
 {
-  if(safemode){
-    QUEUEWAIT = 5;
-    HOLDWAIT = 3;
-  }
-  else{
-    QUEUEWAIT = 15;
-    HOLDWAIT = 8;
-  }
+  return key_holded[dir] && key_counter[dir] == 0;
 }
 
-#define MAXQUEUE 50
+/*************************   Drzeni klaves   *********************************/
+/*****************************************************************************/
+/*************************   Fronta klaves   *********************************/
+/*
+  Do fronty si ukladam zmacknute mezery a sipky. Kazde klavese ve fronte vydrzi
+  nejakou dobu, po te je odstranena. Druha varianta je, ze bude mozne klavesu provest
+  (prepnuti ryb je mozne provest vzdy, posunuti ryby jen, kdyz je mistnost v klidu).
+
+  Fronta je implementovana jako cyklicke pole queue_key, na zacatek fronty ukazuje
+  index queue_start, jeji delku udava queue_length.
+ */
+
+int QUEUEWAIT;  // jak dlouho vydrzi klavesa ve fronte
+#define MAXQUEUE 50  // maximalni mozna delka fronty
 
 static char queue_key[MAXQUEUE];
-static int queue_counter[MAXQUEUE];
 static int queue_start;
 static int queue_length;
+static int queue_counter[MAXQUEUE]; // zbyvajici cas dane klavese, nez bude odstranena
 
-static void queuepush(int key)
+static void queuepush(int key) // vlozi klavesu do fronty
 {
   if(queue_length >= MAXQUEUE) return;
   queue_key[(queue_start+queue_length)%MAXQUEUE] = key;
@@ -70,27 +150,31 @@ static void queuepush(int key)
   queue_length++;
 }
 
-static void queuepop()
+static void queuepop() // odebere klavesu z fronty
 {
   queue_start++;
   if(queue_start == MAXQUEUE) queue_start = 0;
   queue_length--;
 }
 
+void keyboard_erase_queue() // smaze frontu
+{
+  queue_start = queue_length = 0;
+}
+
+/*************************   Fronta klaves   *********************************/
+/*****************************************************************************/
+
+/*
+  Nasledujici funkce volana kazdy frame provede nasledujici cinnosti:
+  1) Projde frontu klaves, smaze klavesy, kterym dosel cas a pripadne provede klavesy na rade.
+  2) Podiva se na drzene sipky a podle toho vyvola posun ryby (pokud se jeste nehybe).
+ */
+static char last_axis = 0; // posledni pouzity smer modulo 2
 void keyboard_step()
 {
   int i, dir;
   char enabled;
-
-  for(i=0; i<KEYNUM; i++)
-    if(key_state[i] < 0){
-      key_state[i]++;
-      if(key_state[i] == 0){
-	if(i == MINUS) rewind_moves(-1, 0);
-	else if(i == PLUS) rewind_moves(1, 0);
-	else if(i == keyboard_blockanim) keyboard_blockanim = 0;
-      }
-    }
 
   enabled = (!rewinding && !gsaves_blockanim && !slider_hold && room_state == ROOM_IDLE);
 
@@ -98,34 +182,36 @@ void keyboard_step()
     queue_counter[(queue_start+i)%MAXQUEUE]--; // a zkratim pocitadla cekatelum
 
   while(queue_length){
-    if(queue_counter[queue_start] == 0){
+    if(queue_counter[queue_start] == 0){ // vyhodim klavesu s proslou lhutou
       dir = queue_key[queue_start];
       queuepop();
+      // nasledujici radek zarizuje, aby rychle stridani klaves znamenalo pouhe cik cak chozeni ryby
       if(queue_length && dir < 4 && queue_key[queue_start] == backdir(dir)) queuepop();
       continue;
     }
-    if(queue_key[queue_start] == SPACE || queue_key[queue_start] == TAB){
+    if(queue_key[queue_start] == SPACE){ // zmena ryby muze probehnout i kdyz se ryba hybe
       changefish();
       queuepop();
       continue;
     }
-    if(!enabled) break;
+    if(!enabled) break; // ale posunuti ryby uz ne
     movefish(queue_key[queue_start]);
-    enabled = enabled && room_state == ROOM_IDLE;
+    if(room_state != ROOM_IDLE) last_axis = dir%2;
+    enabled = enabled && room_state == ROOM_IDLE; /* pokud se ryba zacala posouvat,
+						     neni mozne posouvat jeste jinam */
     queuepop();
   }
 
-  /*
-  if(key_state[0] != 1 && key_state[1] != 1 &&
-     key_state[2] != 1 && key_state[3] != 1) key_counter = -1;
-  else if(key_counter > 0) key_counter--;
-  */
-  for(i=0; i<4; i++) if(key_counter[i] > 0) key_counter[i]--;
+  for(i=0; i<4; i++) if(key_counter[i] > 0) key_counter[i]--; // cekani na autorepeat
 
   if(enabled){
+    /* Posunu rybu drzenym smerem. Jsou li zmacknuty dve opacne sipky,
+       je to jako by nebyla zmacknuta ani jedna. Jsou-li zmacknuty dve sipky
+       v ruznych osach, je preferovana ta osa, ktera nebyla pouzita naposledy.
+     */
     dir = (last_axis+1)%2;
     for(i=0; enabled && i<2; i++){
-      if(arrowpressed(dir) ^ arrowpressed(dir+2))
+      if(!arrowpressed(dir) || !arrowpressed(dir+2))
 	for(; dir < 4; dir += 2)
 	  if(arrowpressed(dir)){
 	    movefish(dir);
@@ -140,171 +226,206 @@ void keyboard_step()
   }
 }
 
-static void change_state(int key, char press)
+void kb_apply_safemode() // zaridi, aby konstanty tohoto modulu odpovidaly stavu promenne safemode
 {
-  if(gsaves_blockanim || menumode){
-    if(press) key_state[key] = 1;
-    else key_state[key] = 0;
-    queue_length = 0;
-
-    if(!menumode){
-      if(press){
-	if(key == MINUS){
-	  rewinding = -1; img_change |= CHANGE_GMOVES;
-	}
-	else if(key == PLUS){
-	  rewinding = 1; img_change |= CHANGE_GMOVES;
-	}
-      }
-      else{
-	if(key == MINUS || key == PLUS){
-	  rewinding = 0; img_change |= CHANGE_GMOVES;
-	}
-      }
-    }
-    return;
+  if(safemode){
+    QUEUEWAIT = 5;
+    HOLDWAIT = 3;
   }
-
-  if(press){
-    if(key_state[key] == 0){
-      if(key < 4 || key == SPACE || key == TAB){
-	keyboard_blockanim = 0;
-	rewind_stop(); 
-	queuepush(key);
-	if(key < 4){ // arrow
-	  if(arrowpressed(UP) || arrowpressed(DOWN) ||
-	     arrowpressed(LEFT) || arrowpressed(RIGHT)) key_counter[key] = 0;
-	  else key_counter[key] = HOLDWAIT;
-	}
-      }
-      else{
-	queue_length = 0;
-	if(key == MINUS) rewind_moves(-1, 1);
-	else if(key == PLUS) rewind_moves(1, 1);
-	else{
-	  if(moves >= 0 || (key != PG_UP && key != HOME)) 
-	    keyboard_blockanim = key;
-	  if(key == PG_UP) setmove(moves-100);
-	  else if(key == PG_DN) setmove(moves+100);
-	  else if(key == HOME) setmove(minmoves);
-	  else if(key == END) setmove(maxmoves);
-	  unanim_fish_rectangle();
-	}
-      }
-    }
-    key_state[key] = 1;
+  else{
+    QUEUEWAIT = 15;
+    HOLDWAIT = 8;
   }
-  else key_state[key] = -1;
 }
 
+static int get_keyaction(KeySym ks) // Vrati typ klavesy podle KeySym
+{
+  switch(ks){
+  case XK_Up:
+  case XK_KP_Up:
+    return UP;
+  case XK_Down:
+  case XK_KP_Down:
+    return DOWN;
+  case XK_Left:
+  case XK_KP_Left:
+    return LEFT;
+  case XK_Right:
+  case XK_KP_Right:
+    return RIGHT;
+  case XK_space:
+  case XK_Tab:
+    return SPACE;
+  case XK_minus:
+  case XK_KP_Subtract:
+    return MINUS;
+  case XK_plus:
+  case XK_equal:
+  case XK_KP_Add:
+    return PLUS;
+  default:
+    return NO_KEY;
+  }
+}
+
+/*
+  Pri zmacknuti 'G', kdyz je zrovna mrizka na popredi, se mrizka vrati do
+  sveho posledniho stavu. Ten je ulozeny v promenne ogridmode: false (0) znamena
+  vypnuta, true znamena na pozadi.
+ */
 static char ogridmode = 0;
 
-void key_event(XKeyEvent xev)
+char key_press(XKeyEvent xev) // funkce volana pri udalosti zmacknuti klavesy, vrati, zda klavesa mela efekt
 {
   KeySym ks;
-  char press;
-  int i;
+  char result = 0;
+  int keyaction = NO_KEY;
 
   XLookupString (&xev, NULL, 0, &ks, NULL);
-  if(!ks) return;
+  if(!ks) return 0;
 
-  if(xev.type == KeyPress) press = 1;
-  else press = 0;
+  if(ks == XK_F1){
+    show_help();
+    return 0;
+  }
 
-  for(i=0; i<KEYNUM; i++)
-    if(ks == key_sym[i]){
-      change_state(i, press);
-      return;
+  if(!menumode){
+    result = 1;
+    switch(ks){
+    case XK_Page_Up: // zmeny tahu v undo historii jine nez -/+ provadim primo
+    case XK_KP_Prior:
+      if(setmove(moves-100)) keyaction = BLOCKANIM;
+      break;
+    case XK_Page_Down:
+    case XK_KP_Next:
+      if(setmove(moves+100)) keyaction = BLOCKANIM;
+      break;
+    case XK_Home:
+    case XK_KP_Home:
+      if(setmove(minmoves)) keyaction = BLOCKANIM;
+      break;
+    case XK_End:
+    case XK_KP_End:
+      if(setmove(maxmoves)) keyaction = BLOCKANIM;
+      break;
+    case XK_F2:
+      gsaves_save(); break;
+    case XK_F3:
+      gsaves_load(); break;
+    case XK_r:
+    case XK_R:
+      if(xev.state & ControlMask) refresh_user_level();
+      break;
+    default: keyaction = get_keyaction(ks); // -, +, mezera, sipky
+      result = 0;
     }
+  }
 
-  if(!press) return;
+  if(keyaction != NO_KEY){
+    key_down(xev.keycode, keyaction);
+    if(keyaction == BLOCKANIM) unanim_fish_rectangle();
+    if(keyaction != MINUS && keyaction != PLUS) rewind_stop(rewinding); // rusim previjeni tahu
 
-  if(ks == XK_g){
+    if(keyaction == SPACE || keyaction < 4){ // mezera a sipky
+      if(!gsaves_blockanim && !slider_hold) queuepush(keyaction); // patri do fronty
+    }
+    else keyboard_erase_queue();
+    if(keyaction < 4) key_counter[keyaction] = HOLDWAIT;
+
+    return 1;
+  }
+
+  switch(ks){
+  case XK_g: // mrizka na pozadi
     if(gridmode != GRID_OFF) gridmode = GRID_OFF;
     else gridmode = GRID_BG;
     img_change |= 1;
-  }
-  else if(ks == XK_G){
-    if(gridmode == GRID_FG)
-      gridmode = ogridmode ? GRID_BG : GRID_OFF;
+    break;
+  case XK_G: // mrizka na popredi
+    if(gridmode == GRID_FG) gridmode = ogridmode ? GRID_BG : GRID_OFF;
     else{
       ogridmode = (gridmode == GRID_BG);
       gridmode = GRID_FG;
     }
     img_change |= 1;
-  }
-  else if(ks == XK_F2 && !menumode) gsaves_save();
-  else if(ks == XK_F3 && !menumode) gsaves_load();
-  else if(ks == XK_F11) fullscreen_toggle();
-  else if(ks == XK_F12){
+    break;
+  case XK_F11: if(ks == XK_F11) fullscreen_toggle(); break;
+  case XK_F12:
     safemode = !safemode;
     apply_safemode();
+    break;
+  case XK_Escape: escape(); break;
+  default: return result;
   }
-  else if(ks == XK_Escape) escape();
-  else if((ks == XK_r || ks == XK_R) && (xev.state & ControlMask))
-    refresh_user_level();
+
+  return 1;
 }
 
-void key_remap()
+void key_release(XKeyEvent xev) // funkce volana pri udalosti pusteni klavesy
 {
-  int i;
-  char key_vector[32];
+  XEvent nextev;
 
-  XQueryKeymap(display, key_vector);
-
-  for(i=0; i<KEYNUM; i++){
-    if(!key_code[i]) continue;
-    if(key_vector[key_code[i]/8] & (1 << (key_code[i]%8))) key_state[i] = 1;
-    else{
-      if(i == keyboard_blockanim) keyboard_blockanim = 0;
-      key_state[i] = 0;
+  if(XEventsQueued(display, QueuedAfterReading)){ // ignoruji autorepeat od X
+    XPeekEvent(display, &nextev);
+    if (nextev.type == KeyPress && nextev.xkey.time == xev.time &&
+	nextev.xkey.keycode == xev.keycode){
+      XNextEvent(display, &nextev);
+      return;
     }
   }
+  key_up(xev.keycode);
 }
 
-void keyboard_erase_queue()
-{
-  queue_length = 0;
-}
-
-void level_keys_init()
+void level_keys_init() // volano pri spusteni levelu
 {
   last_axis = 0;
   keyboard_blockanim = 0;
-  queue_start = 0;
-  queue_length = 0;
+  keyboard_erase_queue();
 }
 
 void init_keyboard()
 {
+  int i;
+
+  // ziskam hranice key_code
+  XDisplayKeycodes(display, &min_keycode, &max_keycode);
+  max_keycode++;
+
+  // inicializace pole holded_code
+  holded_code = mymalloc(sizeof(int)*(max_keycode-min_keycode));
+  for(i = 0; i < max_keycode - min_keycode; i++) holded_code[i] = NO_KEY;
+
+  for(i = 0; i < KEYNUM; i++) key_holded[i] = 0; // inicializace key_holded
+  for(i=0; i<4; i++) key_counter[i] = 0;    // inicializace key_counter
+}
+
+// funkce, ktera prezkouma, ktere klavesy jsou drzene a ktere ne (pri zmene focusu)
+void key_remap()
+{
+  int i, j, spc, keyaction;
+  char key_vector[32], i_holded, i_oriholded;
   KeySym *ks_field;
-  int mincode, maxcode;
-  int spc, i, j;
 
-  key_sym[UP]    = XK_Up;
-  key_sym[DOWN]  = XK_Down;
-  key_sym[LEFT]  = XK_Left;
-  key_sym[RIGHT] = XK_Right;
-  key_sym[SPACE] = XK_space;
-  key_sym[TAB]   = XK_Tab;
-  key_sym[MINUS] = XK_minus;
-  key_sym[PLUS]  = XK_equal;
-  key_sym[PG_UP] = XK_Page_Up;
-  key_sym[PG_DN] = XK_Page_Down;
-  key_sym[HOME]  = XK_Home;
-  key_sym[END]   = XK_End;
+  XQueryKeymap(display, key_vector); // ziskam zmacknuta tlacitka
 
-  XDisplayKeycodes(display, &mincode, &maxcode);
-  maxcode++;
+  // ziskam rozlozeni klavesnice
+  ks_field = XGetKeyboardMapping(display, min_keycode, max_keycode - min_keycode, &spc);
 
-  ks_field = XGetKeyboardMapping(display, mincode, maxcode-mincode, &spc);
+  for(i = min_keycode; i < max_keycode; i++){
+    i_holded = (key_vector[i/8] & (1 << i%8)); // je drzeny key_code i?
+    i_oriholded = (holded_code[i - min_keycode] != NO_KEY) ||
+      (i - min_keycode + 1 == keyboard_blockanim);
 
-  for(i=0; i<KEYNUM; i++) key_code[i] = 0;
-  for(i = 0; i < (maxcode-mincode)*spc; i++){
-    for(j=0; j<KEYNUM; j++)
-      if(ks_field[i] == key_sym[j]){
-	key_code[j] = i/spc+mincode;
-      }
+    if(i_holded && i_oriholded) continue;
+    // klavesa je ve stejnem stavu jako byla
+
+    if(i_oriholded) key_up(i); // klavesa byla pustena
+
+    if(i_holded){ // klavesa byla zmacknuta
+      for(j = spc*(i-min_keycode); j < spc*(i-min_keycode+1); j++)
+	if((keyaction = get_keyaction(ks_field[j])) != NO_KEY) break;
+      key_down(i, keyaction);
+    }
   }
   XFree(ks_field);
 }

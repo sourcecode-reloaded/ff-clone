@@ -10,30 +10,42 @@
 #include "draw.h"
 
 static void setluaint(lua_State *L, char *name, int value)
+                     // nastavi ve skriptu do daneho nazvu promenne dane cislo.
 {
   lua_pushinteger(L, value);
   lua_setglobal(L, name);
 }
 
-void setluastring(lua_State *L, char *name, char *str)
+static void setluastring(lua_State *L, char *name, char *str)
+                     // nastavi ve skriptu do daneho nazvu promenne dany string.
 {
   lua_pushstring(L, str);
   lua_setglobal(L, name);
 }
 
+void setluadirs(lua_State *L)
+             // Nastavi promenne C_datadir a C_homedir (vyuzivano i v menuscript)
+{
+  setluastring(L, "C_datadir", datafile(""));
+  if(homedir) setluastring(L, "C_homedir", homedir);
+}
+
 void *my_luaL_checkludata(lua_State *L, int narg)
+   /* V klasicke luaxlib funkce, ktera otestuje ludata, chybi.
+      Pouziti stejne jako ostatni luaL_check... */
 {
   luaL_checktype(L, narg, LUA_TLIGHTUSERDATA);
   return lua_touserdata(L, narg);
 }
 
-void initlua()
+void initlua() // inicializuje luastat
 {
   int error;
 
   luastat = luaL_newstate();
-  luaL_openlibs(luastat);
+  luaL_openlibs(luastat);  // nacteni zakladnich funkci
 
+  // predani C-ckovych funkci skriptu
   lua_register(luastat, "C_setroomsize", script_setroomsize);
   lua_register(luastat, "C_openpng", script_openpng);
   lua_register(luastat, "C_new_object", script_new_object);
@@ -49,25 +61,19 @@ void initlua()
   lua_register(luastat, "C_genersteel", script_genersteel);
   lua_register(luastat, "C_genernormal", script_genernormal);
 
-
+  // predani hodnot typu objektu skriptu
   setluaint(luastat, "C_SMALL", SMALL);
   setluaint(luastat, "C_BIG", BIG);
   setluaint(luastat, "C_SOLID", SOLID);
   setluaint(luastat, "C_STEEL", STEEL);
   setluaint(luastat, "C_LIGHT", LIGHT);
 
-  setluastring(luastat, "C_datadir", datafile(""));
-  if(homedir) setluastring(luastat, "C_homedir", homedir);
+  setluadirs(luastat); // predani cest k adresarum
 
-  error = luaL_dofile(luastat, datafile("scripts/levelscript.lua"));
+  error = luaL_dofile(luastat, datafile("scripts/levelscript.lua")); // nacteni hlavniho souboru
   if(error){
     const char *message = lua_tostring(luastat, -1);
     warning("LUA: %s\n", message);
     lua_pop(luastat, 1);
   }
-}
-
-void endlua()
-{
-  lua_close(luastat);
 }

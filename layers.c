@@ -10,9 +10,10 @@
 #include "layers.h"
 #include "draw.h"
 
-static ff_image *local_images = NULL;
+static ff_image *local_images = NULL; // Prvni lokalni obrazek ve spojaku
 char local_image_mode = 0;
 
+// Vyrobi novy obrazek (ale potrebuje uz existujici sairo_surface) a vrati na nej pointer
 ff_image *new_image (cairo_surface_t *surf, float x, float y,
 		     float scalex, float scaley)
 {
@@ -37,6 +38,7 @@ ff_image *new_image (cairo_surface_t *surf, float x, float y,
   return result;
 }
 
+// znici lokalni obrazky
 static void free_limages()
 {
   ff_image *img;
@@ -51,33 +53,53 @@ static void free_limages()
   }
 }
 
-ff_image *load_png_image (const char *filename, float x, float y,
+ff_image *load_png_image (const char *filename, float x, float y, // Nacte obrazek z PNG
 			  float scalex, float scaley)
 {
-  return new_image(cairo_image_surface_create_from_png(filename),
-		   x, y, scalex, scaley);
+  ff_image *result;
+
+  result =  new_image(cairo_image_surface_create_from_png(filename),
+		      x, y, scalex, scaley);
+
+  if(cairo_surface_status(result->surf) != CAIRO_STATUS_SUCCESS)
+    warning("loading image '%s' failed", filename);
+
+  return result;
 }
 
+/*
+  Vrstvy (struct ff_layer) radim do spojoveho seznamu, podle ktereho jsou pak
+  nasledne vykreslovany. Pri zarazovani ff_layer do seznamu pritom dbam na to,
+  aby byly serazeny vzestupne podle depth. Pokud tam jiz nejake vrstvy dane depth
+  jsou, zaradim tu novou na konec.
+
+  Tento hlavni spojak je uvozen promennou first_layer a navazuje polozkou next.
+  Dale tu mam jeste jeden kratsi spojak, ktery skace jen po poslednich prvcich
+  jednotlivych hloubek. Ten je uvozen promennou first_depth a navazuje polozkou
+  nextdepth.
+ */
 static ff_layer *first_layer = NULL;
 static ff_layer *first_depth = NULL;
 
 ff_layer *new_layer (ff_object *obj, float depth)
 {
-  ff_layer *l, **ll;
+  ff_layer *l, **d, **ll;
 
   l = (ff_layer *)mymalloc(sizeof(ff_layer));
-  if(!first_depth){
-    first_depth = first_layer = l;
-    l->nextdepth = l->next = NULL;
+
+  ll = &first_layer;
+  for(d = &first_depth; *d && (*d)->depth < depth; d = &((*d)->nextdepth))
+    ll = &((*d)->next);
+  if(*d && (*d)->depth == depth){ // pridavam do jiz existujici hloubky
+    l->next = (*d)->next;
+    l->nextdepth = (*d)->nextdepth;
+    (*d)->next = l;
+    *d = l;
   }
-  else{
-    for(ll = &first_depth; (*ll)->nextdepth && (*ll)->nextdepth->depth <= depth;
-	ll = &((*ll)->nextdepth));
-    l->next = (*ll)->next;
-    l->nextdepth = (*ll)->nextdepth;
-    (*ll)->next = l;
-    if((*ll)->depth < depth) (*ll)->nextdepth = l;
-    else *ll = l;
+  else{ // zakladam novou hloubku
+    l->nextdepth = *d;
+    l->next = *ll;
+    *ll = *d = l;
   }
 
   l->img = NULL;
@@ -87,6 +109,10 @@ ff_layer *new_layer (ff_object *obj, float depth)
   return l;
 }
 
+/*
+  Podiva se, jestli ma scaled v obrazky spravnou velikost, a jestli ne, tak to prepocita.
+  Parametry scalex, scaley udavaji zvetseni, tedy je treba je obratit.
+*/
 static void rescale_image (ff_image *img, float scalex, float scaley)
 {
   float curscalex, curscaley;
@@ -114,6 +140,9 @@ static void rescale_image (ff_image *img, float scalex, float scaley)
   cairo_destroy(cr);
 }
 
+/*
+  Vykresli castecne otoceni vrstvy (podle gflip objektu)
+ */
 static void drawgflip(cairo_t *cr, ff_layer *l)
 {
   float width, height;
@@ -149,42 +178,48 @@ static void drawgflip(cairo_t *cr, ff_layer *l)
   cairo_restore(cr);  
 }
 
+// Vykresli vsechny vrstvy (pri hre)
 void draw_layers (cairo_t *cr, float scalex, float scaley)
 {
   ff_layer *l;
 
   for(l=first_layer; l; l = l->next){
-    if(!l->img) continue;
-    if(l->obj && l->obj->out == 2) continue;
+    if(!l->img) continue; // neni obrazek k vykresleni
+    if(l->obj && l->obj->out == 2) continue; // objekt je venku z mistnosti
 
-    rescale_image(l->img, scalex, scaley);
+    rescale_image(l->img, scalex, scaley); // pro jistotu, jetsli ma obrazek spravnou velikost
+
     cairo_save(cr);
-    if(l->obj){
+    if(l->obj){ // posunu se podle souradnic objektu
       cairo_translate(cr, l->obj->c.x, l->obj->c.y);
       if(ismoving(l->obj)){
-	if(room_movedir == UP) cairo_translate(cr, 0, -anim_phase);
+	if(room_movedir == UP) cairo_translate(cr, 0, -anim_phase); // objekt je posouvan
 	if(room_movedir == DOWN) cairo_translate(cr, 0, anim_phase);
 	if(room_movedir == LEFT) cairo_translate(cr, -anim_phase, 0);
 	if(room_movedir == RIGHT) cairo_translate(cr, anim_phase, 0);
       }
       if(isonfish(l->obj)) cairo_translate(cr, heap_x_advance, heap_y_advance);
-      if(l->obj->gflip == 1){
+         // viz draw.c: animheap()
+
+      if(l->obj->gflip == 1){ // zcela otocena ryba
 	cairo_translate(cr, l->obj->width, 0);
 	cairo_scale(cr, -1, 1);
       }
     }
-    cairo_translate(cr, l->img->x, l->img->y);
+    cairo_translate(cr, l->img->x, l->img->y); // nastavim spravne souradnice a velikost
     cairo_scale(cr, l->img->curscalex, l->img->curscaley);
-    if(l->obj && l->obj->gflip > 0 && l->obj->gflip < 1) drawgflip(cr, l);
+
+    if(l->obj && l->obj->gflip > 0 && l->obj->gflip < 1) drawgflip(cr, l); // castecne otocena ryba
     else{
-     cairo_set_source_surface(cr, l->img->scaled, 0, 0);
-     cairo_paint(cr);
+      cairo_set_source_surface(cr, l->img->scaled, 0, 0); // kreslim
+      cairo_paint(cr);
     }
     cairo_restore(cr);
   }
 }
 
 void draw_layers_noanim (cairo_t *cr)
+    // Vykresli vsechny vrstvy, ovsem bez animaci, za ucelem vytvoreni nahledu
 {
   ff_layer *l;
 
@@ -208,9 +243,100 @@ void draw_layers_noanim (cairo_t *cr)
   }
 }
 
-cairo_t *win_cr;
+char layers_change() /* vrati CHANGE_ROOM, jestli se nejaka vrstva zmenila
+			od posledniho volani teto funkce, jinak vrati 0 */
+{
+  ff_layer *l;
+  char result;
+  float x, y;
 
-void count_layers_boundary(int index, char first)
+  result = 0;
+
+  for(l = first_layer; l; l = l->next){
+    if(!l->img || (l->obj && l->obj->out == 2)){ // zmena existence obrazku
+      if(l->last_img) result = CHANGE_ROOM;
+      l->last_img = NULL;
+      continue;
+    }
+
+    x = y = 0; // spocitam nove souradnice
+
+    if(l->obj){ // zapocitam do nich pozici a posunuti objektu
+      if(l->obj->gflip != l->obj->ogflip) result = CHANGE_ROOM;
+      l->obj->ogflip = l->obj->gflip;
+
+      x += l->obj->c.x; y += l->obj->c.y;
+      if(ismoving(l->obj)){
+	if(room_movedir == UP) y -= anim_phase;
+	if(room_movedir == DOWN) y += anim_phase;
+	if(room_movedir == LEFT) x -= anim_phase;
+	if(room_movedir == RIGHT) x += anim_phase;
+      }
+      if(isonfish(l->obj)){ x += heap_x_advance; y += heap_y_advance; }
+    }
+    x += l->img->x; y += l->img->y; // a posunuti obrazku
+
+    if(x != l->last_x || y != l->last_y || l->img != l->last_img)
+      result = CHANGE_ROOM;
+
+    l->last_img = l->img;
+    l->last_x = x;
+    l->last_y = y;
+  }
+
+  return result;
+}
+
+int script_new_layer(lua_State *L) // lua verze new_layer()
+{
+  ff_object *obj = lua_touserdata(L, 1);
+  float depth = luaL_checknumber(L, 2);
+
+  lua_pushlightuserdata(L, new_layer(obj, depth));
+
+  return 1;
+}
+
+int script_load_png_image(lua_State *L) // lua verze load_png_layer()
+{
+  const char *filename = luaL_checkstring(L, 1);
+  float x = luaL_checknumber(L, 2);
+  float y = luaL_checknumber(L, 3);
+
+  ff_image *result = load_png_image(filename, x, y, 1.0/SQUARE_WIDTH, 1.0/SQUARE_HEIGHT);
+
+  if(cairo_surface_status(result->surf) == CAIRO_STATUS_SUCCESS) lua_pushlightuserdata(L, result);
+  else lua_pushnil(L); // pri selhani vrati nil
+
+  return 1;
+}
+
+int script_setlayerimage(lua_State *L) // nastavi vrstve obrazek (objekt dostala pri vytvoreni)
+{
+  ff_layer *l = (ff_layer *)my_luaL_checkludata(L, 1);
+  ff_image *img = (ff_image *)my_luaL_checkludata(L, 2);
+  l->img = img;
+
+  return 0;
+}
+
+void delete_layers() // smaze vrstvy a lokalni obrazky
+{
+  ff_layer *l;
+
+  free_limages();
+
+  while(first_layer){
+    l = first_layer;
+    first_layer = first_layer->next;
+    free(l);
+  }
+  first_depth = NULL;
+}
+
+
+// v soucasne dobe nema vyznam, nepovedeny pokus o optimalizaci
+void count_layers_boundary(int index, char first, cairo_t *cr)
 {
   float x, y;
   int x1, y1, x2, y2, i;
@@ -279,9 +405,9 @@ void count_layers_boundary(int index, char first)
 	if(y2 < l->boundary[i].y+l->boundary[i].height) y2 = l->boundary[i].y+l->boundary[i].height;
       }
       */
-      cairo_rectangle(win_cr, l->boundary[0].x, l->boundary[0].y,
+      cairo_rectangle(cr, l->boundary[0].x, l->boundary[0].y,
 		      l->boundary[0].width, l->boundary[0].height);
-      cairo_rectangle(win_cr, l->boundary[1].x, l->boundary[1].y,
+      cairo_rectangle(cr, l->boundary[1].x, l->boundary[1].y,
 		      l->boundary[1].width, l->boundary[1].height);
       /*
       printf("+%3d  +%3d: %3d x %3d\n", l->boundary[0].x, l->boundary[0].y,
@@ -294,94 +420,6 @@ void count_layers_boundary(int index, char first)
   //printf("\n\n\n");
   /*
   if(x1 < x2)
-    cairo_rectangle(win_cr, x1, y1, x2-x1, y2-y1);
+    cairo_rectangle(cr, x1, y1, x2-x1, y2-y1);
   */
-}
-
-char layers_change()
-{
-  ff_layer *l;
-  char result;
-  float x, y;
-
-  result = 0;
-
-  for(l = first_layer; l; l = l->next){
-    if(!l->img || (l->obj && l->obj->out == 2)){
-      if(l->last_img) result = CHANGE_ROOM;
-      l->last_img = NULL;
-      continue;
-    }
-
-    x = y = 0;
-
-    if(l->obj){
-      if(l->obj->gflip != l->obj->ogflip) result = CHANGE_ROOM;
-      l->obj->ogflip = l->obj->gflip;
-
-      x += l->obj->c.x; y += l->obj->c.y;
-      if(ismoving(l->obj)){
-	if(room_movedir == UP) y -= anim_phase;
-	if(room_movedir == DOWN) y += anim_phase;
-	if(room_movedir == LEFT) x -= anim_phase;
-	if(room_movedir == RIGHT) x += anim_phase;
-      }
-      if(isonfish(l->obj)){ x += heap_x_advance; y += heap_y_advance; }
-    }
-    x += l->img->x; y += l->img->y;
-
-    x *= room_x_scale; y *= room_y_scale;
-    if(x != l->last_x || y != l->last_y || l->img != l->last_img)
-      result = CHANGE_ROOM;
-
-    l->last_img = l->img;
-    l->last_x = x;
-    l->last_y = y;
-  }
-
-  return result;
-}
-
-int script_new_layer(lua_State *L)
-{
-  ff_object *obj = lua_touserdata(L, 1);
-  float depth = luaL_checknumber(L, 2);
-
-  lua_pushlightuserdata(L, new_layer(obj, depth));
-
-  return 1;
-}
-
-int script_load_png_image(lua_State *L)
-{
-  const char *filename = luaL_checkstring(L, 1);
-  float x = luaL_checknumber(L, 2);
-  float y = luaL_checknumber(L, 3);
-
-  lua_pushlightuserdata(L, load_png_image(filename, x, y, 1.0/SQUARE_WIDTH, 1.0/SQUARE_HEIGHT));
-
-  return 1;
-}
-
-int script_setlayerimage(lua_State *L)
-{
-  ff_layer *l = (ff_layer *)my_luaL_checkludata(L, 1);
-  ff_image *img = (ff_image *)my_luaL_checkludata(L, 2);
-  l->img = img;
-
-  return 0;
-}
-
-void delete_layers()
-{
-  ff_layer *l;
-
-  free_limages();
-
-  while(first_layer){
-    l = first_layer;
-    first_layer = first_layer->next;
-    free(l);
-  }
-  first_depth = NULL;
 }

@@ -1,0 +1,42 @@
+new_branch("")
+next_node("tutor",     29,  30)
+next_node("easy",      44,  72)
+next_node("door",      69, 113)
+next_node("tower",    106, 149)
+next_node("flowers",  145, 187)
+next_node("ring",     187, 220)
+next_node("stairs",   224, 244)
+next_node("3pad",     268, 265)
+next_node("duckle",   314, 274)
+
+new_branch("door")
+next_node("pickable",     37, 145)
+next_node("under",        20, 185)
+next_node("laden",        18, 226)
+next_node("sealion",      27, 262)
+next_node("klobotechna",  56, 282)
+next_node("machine",      92, 284)
+
+new_branch("under")
+next_node("steeltrifle",  59, 194)
+next_node("IT",           95, 209)
+next_node("door2",       131, 232)
+next_node("organ",        162, 258)
+
+new_branch("tower")
+next_node("hammer",     148, 140)
+next_node("trapdoor",   176, 112)
+next_node("extrapearl", 174,  73)
+next_node("emulator",   157,  42)
+next_node("pipe",       131,  24)
+
+new_branch("trapdoor");
+next_node("highway",    213, 117)
+next_node("steel",      252, 121)
+next_node("separated",  291, 124)
+
+new_branch("flowers");
+next_node("crust",      186, 175)
+next_node("stopper",    229, 177)
+next_node("bars",       272, 188)
+next_node("wolf",       312, 205)

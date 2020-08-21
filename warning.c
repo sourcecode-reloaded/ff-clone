@@ -2,8 +2,11 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include "warning.h"
+#include "main.h"
 
-void warning (char *s, ...)
+void warning(char *s, ...)
+  /* vypise varovani na stderr, parametry podobne jako printf, jen
+     neni treba psat '\n' pro ukonceni radku */
 {
   va_list vl;
 
@@ -14,7 +17,9 @@ void warning (char *s, ...)
   fprintf(stderr, "\n");
 }
 
-void error (char *s, ...)
+void error(char *s, ...)
+  /* podobne jako warning, ale ukonci program a
+     na zacatek radku misto "warning:" napise "error:" */
 {
   va_list vl;
 
@@ -27,10 +32,11 @@ void error (char *s, ...)
   exit(-1);
 }
 
-void *mymalloc (unsigned int size)
+void *mymalloc(unsigned int size)
+  /*  pouzije malloc, selze-li, skonci na error: memory allocation failed */
 {
-  void *vysledek;
+  void *result;
 
-  if(!(vysledek = malloc(size))) error("Allocation of size %d failed", size);
-  return vysledek;
+  if(!(result = malloc(size))) error("Allocation of size %d failed", size);
+  return result;
 }

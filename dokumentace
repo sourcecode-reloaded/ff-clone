@@ -1,0 +1,38 @@
+Program je rozdeleny na nasledujici moduly. Podrobnosti najdete
+v prislusnych .c a .h souborech.
+
+warning:        Varovné a chybové hlá¹ky
+directories:    Kde hledat data a kde ulo¾ené pozice
+
+object:         Struktura objektu hry
+rules:          Implementace pravidel
+moves:          Undo historie, ulo¾ení pozice
+
+X:              Nízkoúrovòové funkce spolupracující s X
+window:         Práce s hlavním oknem, umístìní ovládacích prvkù do okna
+layers:         Seznam obrázkù k vykreslení
+gener:          Generování obrázku pøedmìtu podle jeho tvaru
+draw:           Vykreslování okna a animace
+
+script:         Inicializace skriptu pro levely
+levelscript:    Spu¹tìní levelu a spolupráce s lua
+
+gmoves:         Undo páseèek
+imgsave:        Ukládání miniatury místnosti
+gsaves:         Mac menu ulo¾ených pozic
+
+keyboard:       Vstup z klávesnice (dr¾ené klávesy, fronta kláves)
+loop:           Hlavní smyèka, èasovaè, události
+
+menuscript:     Seznam místností a spolupráce s lua
+menudraw:       Vykreslení mapy místností
+menuevents:     Reakce na pohyby mysi (a klikani) v menu
+
+infowindow:	Vyskakovaci okno -- napoveda, upozorneni na halu slavy
+
+main:           Zaèátek a konec
+
+lua skripty jsou umístìny v data/scripts/
+
+levelscript:    Rozebrání PNG mapy
+menuscript:     Postupné odkrývání vìtví

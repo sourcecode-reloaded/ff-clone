@@ -3,10 +3,8 @@
 #include "warning.h"
 #include "X.h"
 
-//: initX
-
-void initX ()
-/*******************************/
+// Zahaji komunikaci s X serverem, inicializuje promenne display a screen
+void initX()
 {
   char *display_name = NULL;
 
