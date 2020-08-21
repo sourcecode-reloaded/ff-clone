@@ -1,0 +1,31 @@
+level_name("tutor",   "Tak takhle to funguje")
+level_name("easy",    "Pro začátek něco lehčího")
+level_name("door",    "Počkej, nezabouchávej!")
+level_name("tower",   "Zubatá věž")
+level_name("flowers", "Perličky a kytičky")
+level_name("ring",    "Jeden prsten ...")
+level_name("3pad",    "Podložili špatnou nohu")
+level_name("duckle",  "Návrat k růžové kachničce")
+
+level_name("pickable",    "Sebereme perličky?")
+level_name("under",       "Kudy pod ně")
+level_name("sealion",     "Setkání s lachtanem")
+level_name("klobotechna", "Zavřeni v Klobotechně")
+level_name("machine",     "Uvnitř perličkového strojku")
+
+level_name("steeltrifle", "Ocelová potvůrka")
+level_name("IT",          "Ajťákovo doupě")
+level_name("harp",        "Harfa")
+
+level_name("hammer",     "Zatloukáme řešení")
+level_name("extrapearl", "Ještě jednu perličku")
+level_name("emulator",   "Emulátor")
+level_name("pipe",       "Hlupka, trubka")
+
+level_name("highway",    "Rybí dálnice")
+level_name("steel",      "Ocelový zámek")
+level_name("separated",  "Oddělená akvária")
+
+level_name("crust",   "I ryba může mít krunýř")
+level_name("bars",    "Padavé tyčinky")
+level_name("wolf",    "Oranžová karkulka")
