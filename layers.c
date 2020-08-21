@@ -145,6 +145,7 @@ static void rescale_image (ff_image *img, float scalex, float scaley)
  */
 static void drawgflip(cairo_t *cr, ff_layer *l)
 {
+  float epsilon = 0.01;
   float width, height;
 
   width = l->img->scalex*cairo_image_surface_get_width(l->img->surf)/l->img->curscalex;
@@ -152,30 +153,35 @@ static void drawgflip(cairo_t *cr, ff_layer *l)
 
   cairo_translate(cr, 0, height/2);
 
-  cairo_save(cr);
-  cairo_scale(cr, 1, cosf(M_PI/2*l->obj->gflip));
-  cairo_translate(cr, 0, -height/2);
-  cairo_rectangle(cr, 0, height/2, width, height/2);
-  cairo_set_source_surface(cr, l->img->scaled, 0, 0);
-  cairo_fill(cr);
-  cairo_restore(cr);
+  if(fabs(cosf(M_PI/2*l->obj->gflip)) >= epsilon){
+    cairo_save(cr);
+    cairo_scale(cr, 1, cosf(M_PI/2*l->obj->gflip));
+    cairo_translate(cr, 0, -height/2);
+    cairo_rectangle(cr, 0, height/2, width, height/2);
+    cairo_set_source_surface(cr, l->img->scaled, 0, 0);
+    cairo_fill(cr);
+    cairo_restore(cr);
+  }
 
-  cairo_save(cr);
-  cairo_translate(cr, l->obj->width / l->img->curscalex, 0);
-  cairo_scale(cr, -1, sinf(M_PI/2*l->obj->gflip));
-  cairo_translate(cr, 0, -height/2);
-  cairo_set_source_surface(cr, l->img->scaled, 0, 0);
-  cairo_paint(cr);
+  if(fabs(sinf(M_PI/2*l->obj->gflip)) >= epsilon){
+    cairo_save(cr);
+    cairo_translate(cr, l->obj->width / l->img->curscalex, 0);
+    cairo_scale(cr, -1, sinf(M_PI/2*l->obj->gflip));
+    cairo_translate(cr, 0, -height/2);
+    cairo_set_source_surface(cr, l->img->scaled, 0, 0);
+    cairo_paint(cr);
+    cairo_restore(cr);
+  }
 
-  cairo_restore(cr);
-
-  cairo_save(cr);
-  cairo_scale(cr, 1, cosf(M_PI/2*l->obj->gflip));
-  cairo_translate(cr, 0, -height/2);
-  cairo_rectangle(cr, 0, 0, width, height/2);
-  cairo_set_source_surface(cr, l->img->scaled, 0, 0);
-  cairo_fill(cr);
-  cairo_restore(cr);  
+  if(fabs(cosf(M_PI/2*l->obj->gflip)) >= epsilon){
+    cairo_save(cr);
+    cairo_scale(cr, 1, cosf(M_PI/2*l->obj->gflip));
+    cairo_translate(cr, 0, -height/2);
+    cairo_rectangle(cr, 0, 0, width, height/2);
+    cairo_set_source_surface(cr, l->img->scaled, 0, 0);
+    cairo_fill(cr);
+    cairo_restore(cr);
+  }
 }
 
 // Vykresli vsechny vrstvy (pri hre)

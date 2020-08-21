@@ -101,7 +101,7 @@ void open_level(char *codename) /* Otevre mistnost z menu. Jedine, co vlastne de
 				   ze spusti stejnojmennou lua funkci. */
 {
   room_codename = NULL;
-  lua_getfield(luastat, LUA_GLOBALSINDEX, "script_open_level");
+  lua_getglobal(luastat, "script_open_level");
   lua_pushstring(luastat, codename);
   lua_call(luastat, 1, 0);
   run_level();
@@ -111,7 +111,7 @@ void open_user_level() /* Otevre mistnost z menu. Jedine, co vlastne dela je, ze
 			  lua funkci s parametrem userlev (tam je cesta, kterou uzivatel zadal). */
 {
   room_codename = NULL;
-  lua_getfield(luastat, LUA_GLOBALSINDEX, "script_open_user_level");
+  lua_getglobal(luastat, "script_open_user_level");
   lua_pushstring(luastat, userlev);
   lua_call(luastat, 1, 0);
   run_level();
@@ -119,7 +119,7 @@ void open_user_level() /* Otevre mistnost z menu. Jedine, co vlastne dela je, ze
 
 void end_level() // ukonci level
 {
-  lua_getfield(luastat, LUA_GLOBALSINDEX, "script_end_level"); // zavola stejnojmennou lua funkci
+  lua_getglobal(luastat, "script_end_level"); // zavola stejnojmennou lua funkci
   lua_call(luastat, 0, 0);
 
   delete_layers(); // a rusi dalsi struktury

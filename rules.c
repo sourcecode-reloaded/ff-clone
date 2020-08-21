@@ -175,7 +175,7 @@ void killfish(ff_object *fish)  // nastavi rybu jako mrtvou
   availfish();  // prepnuti na jinou rybu
 
   // skript dostane informaci, ze ryba zemrela
-  lua_getfield(luastat, LUA_GLOBALSINDEX, "script_killfish");
+  lua_getglobal(luastat, "script_killfish");
   lua_pushlstring(luastat, fish->color, 4);
   lua_call(luastat, 1, 0);
   // cimz vyda pokyn, aby se zmenil jeji obrazek na kostricku
@@ -188,7 +188,7 @@ void vitalizefish(ff_object *fish) // oziveni ryby (napr. pri undo)
   fish->live = 1;
 
   // skript dostane informaci, ze ryba ozila
-  lua_getfield(luastat, LUA_GLOBALSINDEX, "script_vitalizefish");
+  lua_getglobal(luastat, "script_vitalizefish");
   lua_pushlstring(luastat, fish->color, 4);
   lua_call(luastat, 1, 0);
   // cimz vyda pokyn, aby se zmenil jeji obrazek zpatky na zivou rybu

@@ -149,7 +149,7 @@ void menu_initlua()
  */
 void menu_solved_node(menu_node *n, int m) // n = vyresena mistnost, m = pocet tahu tohoto reseni
 {
-  lua_getfield(menu_luastat, LUA_GLOBALSINDEX, "script_solved_node");
+  lua_getglobal(menu_luastat, "script_solved_node");
   lua_pushstring(menu_luastat, n->codename);
   lua_pushinteger (menu_luastat, m);
   lua_call(menu_luastat, 2, 0);

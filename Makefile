@@ -10,9 +10,9 @@ DATADIR = /usr/local/share/ff-clone
 #-----------------------------------------------
 
 CC = gcc
-INCLUDE = -I. $(shell pkg-config --cflags lua 2>/dev/null || pkg-config --cflags lua5.1 2>/dev/null || echo "")
+INCLUDE = -I. $(shell pkg-config --cflags lua 2>/dev/null || pkg-config --cflags lua5.2 2>/dev/null || echo "")
 OBJ = main.o loop.o warning.o window.o X.o draw.o gener.o layers.o script.o levelscript.o object.o rules.o moves.o gmoves.o keyboard.o imgsave.o directories.o menudraw.o menuevents.o menuscript.o gsaves.o infowindow.o
-LIB =  -lX11 -lcairo $(shell pkg-config --libs lua 2>/dev/null || pkg-config --libs lua5.1 2>/dev/null || echo -llua) $(LDFLAGS)
+LIB =  -lX11 -lcairo $(shell pkg-config --libs lua 2>/dev/null || pkg-config --libs lua5.2 2>/dev/null || echo -llua) $(LDFLAGS) -lm
 PROGNAME = ff-clone
 
 all: $(PROGNAME)
